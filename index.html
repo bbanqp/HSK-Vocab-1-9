@@ -60,6 +60,8 @@ background:var(--paper) linear-gradient(var(--grid) 1px,transparent 1px) 0 0/40p
 .lvs button b{font-variant-numeric:tabular-nums}.lvs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .lsum{margin:0 0 10px;color:var(--mute);font-size:14px}
 tbody tr{content-visibility:auto;contain-intrinsic-size:auto 46px}
+.retry{font:inherit;font-size:16px;padding:10px 22px;border-radius:999px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer;min-height:44px}
+#off button{font:inherit;color:inherit;text-decoration:underline;background:none;border:0;padding:0;cursor:pointer}
 .hint{position:absolute;z-index:2;left:12px;bottom:10px;font-size:13px;color:var(--mute);background:var(--bg);padding:3px 10px;border-radius:999px;border:1px solid var(--rule);pointer-events:none}
 .bub{cursor:pointer}.bub text{pointer-events:none}
 .bub .in{transform-box:fill-box;transform-origin:center;transition:transform .35s cubic-bezier(.2,.8,.2,1)}
@@ -179,8 +181,9 @@ const STROKES={},strokeP={};let CHARS={},WMAP={};const CH=()=>CHARS;
 const NBD=16,NBC=24,hk=s=>[...s].reduce((a,c)=>a+c.codePointAt(0),0)%NBD,cb=c=>c.codePointAt(0)%NBC;
 const detP={},detDone=new Set(),chP={},chDone=new Set();
 const fromArr=a=>{const w={h:a[0],p:a[1],th:a[2],lv:a[3],pos:a[4]?a[4].split(","):[],f:a[5],n:a[6]};if(a[7])w.id=a[7];return w};
-const loadDet=w=>{if(!DATA.split)return Promise.resolve();const b=hk(K(w));return detP[b]||(detP[b]=fetch(`det/${b}.json`).then(r=>r.json()).then(o=>{for(const k in o){const x=WMAP[k];if(x)Object.assign(x,o[k])}detDone.add(b)}).catch(()=>{delete detP[b]}))};
-const loadChars=s=>{if(!DATA.split)return Promise.resolve();return Promise.all([...new Set([...s].map(cb))].map(b=>chP[b]||(chP[b]=fetch(`chars/${b}.json`).then(r=>r.json()).then(o=>{Object.assign(CHARS,o);chDone.add(b)}).catch(()=>{delete chP[b]}))))};
+const getJ=(u,ms=20000)=>{const ac=window.AbortController?new AbortController():null,t=setTimeout(()=>ac&&ac.abort(),ms);return fetch(u,ac?{signal:ac.signal}:{}).then(r=>{if(!r.ok)throw new Error(r.status);return r.json()}).finally(()=>clearTimeout(t))};
+const loadDet=w=>{if(!DATA.split)return Promise.resolve();const b=hk(K(w));return detP[b]||(detP[b]=getJ(`det/${b}.json`).then(o=>{for(const k in o){const x=WMAP[k];if(x)Object.assign(x,o[k])}detDone.add(b)}).catch(e=>{delete detP[b];throw e}))};
+const loadChars=s=>{if(!DATA.split)return Promise.resolve();return Promise.all([...new Set([...s].map(cb))].map(b=>chP[b]||(chP[b]=getJ(`chars/${b}.json`).then(o=>{Object.assign(CHARS,o);chDone.add(b)}).catch(e=>{delete chP[b];throw e}))))};
 const ensureChars=s=>loadChars(s).then(()=>{const comp=[...s].flatMap(c=>CHARS[c]?.d||[]).join("");return comp?loadChars(comp):null});
 const charsReady=s=>[...s].every(c=>chDone.has(cb(c)))&&[...s].flatMap(c=>CHARS[c]?.d||[]).every(c=>chDone.has(cb(c)));
 const wordReady=w=>!DATA.split||(detDone.has(hk(K(w)))&&charsReady(w.h));
@@ -273,7 +276,7 @@ const ro=new ResizeObserver(()=>{if(fig.clientWidth+"x"+fig.clientHeight!==lastW
 const ROLE={pictophonetic:"ภาพ + เสียง (形声字)",ideographic:"รวมความหมาย (会意字)",pictographic:"อักษรภาพ (象形字)"};
 const SLOT={S:"ประธาน (Subject)",V:"กริยา (Verb)",O:"กรรม (Object)",N:"คำนาม (Noun)",Adj:"คุณศัพท์ (Adjective)",A:"สิ่งที่ 1",B:"สิ่งที่ 2"};
 const NB=24,bk=c=>c.codePointAt(0)%NB;
-const loadStrokes=cs=>Promise.all([...new Set([...cs].map(bk))].map(b=>strokeP[b]||(strokeP[b]=fetch(`strokes/${b}.json`).then(r=>r.json()).then(d=>Object.assign(STROKES,d)))));
+const loadStrokes=cs=>Promise.all([...new Set([...cs].map(bk))].map(b=>strokeP[b]||(strokeP[b]=getJ(`strokes/${b}.json`).then(d=>Object.assign(STROKES,d)).catch(e=>{delete strokeP[b];throw e}))));
 const pyOf=c=>CH()[c]?.p||"";
 function patHtml(f,word){return esc(f).split(esc(word)).map(part=>part.replace(/\b(S|V|O|N|Adj|A|B)\b/g,m=>`<span class="slot" title="${SLOT[m]}">${m}</span>`)).join(`<span class="hl">${esc(word)}</span>`)}
 function compRow(c){const e=CH()[c];if(!e)return"";
@@ -311,11 +314,12 @@ function charHtml(c,from,prev){const e=CH()[c]||{},pe=from?CH()[from]:null;
   ${writeBox(c)}`}
 function sheet(animate){const b=$("body"),top=state.nav[state.nav.length-1];
   if(!top){b.innerHTML=`<p class="empty">แตะที่คำในแผนภาพหรือในตารางด้านล่าง เพื่อดูรายละเอียด</p><h3>สีพินอินบอกวรรณยุกต์</h3><p>${[1,2,3,4].map(t=>`<span class="chip" style="color:var(--t${t})">เสียง ${t}</span>`).join("")}<span class="chip" style="color:var(--t0)">เสียงเบา</span></p>`;writers=[];return}
-  const wait=`<p class="empty">กำลังโหลดรายละเอียด…</p>`,again=()=>{if(state.nav[state.nav.length-1]===top)sheet(false)};
+  const wait=`<p class="empty">กำลังโหลดรายละเอียด…</p>`,again=()=>{if(state.nav[state.nav.length-1]===top)sheet(false)},
+    fail=()=>{if(state.nav[state.nav.length-1]===top)b.innerHTML=`<p class="empty">โหลดรายละเอียดคำนี้ไม่ได้ เพราะเน็ตช้าหรือเชื่อมต่อไม่ได้<br>ถ้ายังดาวน์โหลดลงเครื่องไม่ครบ ลองเปิด VPN แล้วกดลองใหม่</p><p style="text-align:center"><button class="retry" data-retry="1">ลองใหม่</button></p>`};
   if(top.w){const w=WMAP[top.w]||DATA.words.find(x=>K(x)===top.w);if(!w){state.nav=[];return sheet()}
-    if(!wordReady(w)){b.innerHTML=wait;Promise.all([loadDet(w),ensureChars(w.h)]).then(again);return}
+    if(!wordReady(w)){b.innerHTML=wait;Promise.all([loadDet(w),ensureChars(w.h)]).then(again,fail);return}
     b.innerHTML=wordHtml(w);mountWriters(w.h)}
-  else{if(DATA.split&&!charsReady(top.c)){b.innerHTML=wait;ensureChars(top.c).then(again);return}
+  else{if(DATA.split&&!charsReady(top.c)){b.innerHTML=wait;ensureChars(top.c).then(again,fail);return}
     const p=state.nav[state.nav.length-2];b.innerHTML=charHtml(top.c,top.from,p?(p.w||p.c):"");mountWriters(top.c)}
   if(animate){b.classList.remove("enter");void b.offsetWidth;b.classList.add("enter");$("sheet").scrollTop=0}}
 function openChar(c,from){state.nav.push({c,from});sheet(true);$("sheet").classList.add("open")}
@@ -346,6 +350,7 @@ function render(){CSSC={};legend();build();mark();sheet(false);list()}
 /* ---------- events ---------- */
 $("list").addEventListener("click",e=>{const r=e.target.closest("tr[data-h]");if(r)pick(r.dataset.h)});
 $("list").addEventListener("keydown",e=>{const r=e.target.closest("tr[data-h]");if(r&&e.key==="Enter")pick(r.dataset.h)});
+$("sheet").addEventListener("click",e=>{if(e.target.closest("[data-retry]")){sheet(false);return}});
 $("sheet").addEventListener("click",e=>{const t=e.target.closest("[data-say],[data-char],[data-word],[data-back],[data-anim],[data-quiz],[data-show]");if(!t)return;
   if(t.dataset.say!==undefined)say(t.dataset.say);
   else if(t.dataset.char!==undefined)openChar(t.dataset.char,t.dataset.from||null);
@@ -383,12 +388,18 @@ $("hint").textContent="กำลังโหลดคำศัพท์…";
 </script>
 <script>
 try{if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")&&window.top===window&&!/claude/.test(location.hostname)){
-  const off=document.getElementById("off"),had=!!navigator.serviceWorker.controller;
-  const ok=()=>{off.textContent="✓ ใช้งานแบบไม่มีเน็ตได้แล้ว"};
-  if(had)ok();else off.textContent="กำลังดาวน์โหลดข้อมูลทั้งหมดลงเครื่อง (ประมาณ 11 MB) รอสักครู่…";
-  navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.ready){ok();if(had&&e.data.updated)off.textContent="✓ อัปเดตข้อมูลใหม่แล้ว · ใช้งานแบบไม่มีเน็ตได้"}});
-  let re=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(had&&!re){re=true;location.reload()}});
-  navigator.serviceWorker.register("sw.js").catch(()=>{off.textContent=""});
+  const sw=navigator.serviceWorker,off=document.getElementById("off"),had=!!sw.controller;
+  off.textContent="กำลังเตรียมดาวน์โหลดข้อมูลลงเครื่อง…";
+  const show=d=>{const pc=Math.round(d.done/d.total*100);
+    if(d.done>=d.total)off.textContent="✓ ใช้งานแบบไม่มีเน็ตได้แล้ว";
+    else if(!d.running&&d.failed)off.innerHTML=`ลงเครื่องแล้ว ${d.done}/${d.total} ไฟล์ (${pc}%) · เน็ตเชื่อมต่อไม่ได้ ลองเปิด VPN แล้ว <button id="offr">แตะเพื่อโหลดต่อ</button>`;
+    else off.textContent=`กำลังดาวน์โหลดลงเครื่อง ${d.done}/${d.total} ไฟล์ (${pc}%) · เปิดแอปค้างไว้จนครบ`};
+  const fill=()=>sw.ready.then(r=>{r.active&&r.active.postMessage("fill")}).catch(()=>{});
+  sw.addEventListener("message",e=>{if(e.data&&e.data.prog)show(e.data.prog)});
+  off.addEventListener("click",e=>{if(e.target.id==="offr"){off.textContent="กำลังลองใหม่…";fill()}});
+  let re=false;sw.addEventListener("controllerchange",()=>{if(had&&!re){re=true;location.reload()}else fill()});
+  sw.register("sw.js").then(fill,()=>{off.innerHTML=`ติดตั้งลงเครื่องไม่สำเร็จ เน็ตเชื่อมต่อไม่ได้ ลองเปิด VPN แล้ว <button onclick="location.reload()">แตะเพื่อลองใหม่</button>`});
+  addEventListener("online",fill);document.addEventListener("visibilitychange",()=>{if(!document.hidden)fill()});
 }}catch(e){}
 </script>
 </body>
